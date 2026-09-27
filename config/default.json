@@ -1,0 +1,8 @@
+{
+  "server": {"host": "127.0.0.1", "port": 8737, "publicOrigin": ""},
+  "language": "en",
+  "internet": {"enabled": true, "mode": "normal", "allowHttp": false, "maxDownloadMB": 100, "logRequests": true},
+  "updates": {"automaticCheck": false, "automaticApply": false, "trustedSource": ""},
+  "remoteAccess": {"enabled": false, "provider": "none"},
+  "scheduler": {"enabled": true}, "voice": {"enabled": false}
+}
