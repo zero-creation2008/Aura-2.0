@@ -1,0 +1,16 @@
+<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>DIVI</title>
+<style>body{margin:0;background:#101623;color:#eff5ff;font:16px system-ui}main{max-width:920px;margin:auto;padding:24px}h1{letter-spacing:.18em;color:#54dec0}.card{background:#1b2638;border:1px solid #344156;border-radius:16px;padding:22px;margin:16px 0}input,button{font:inherit;border-radius:9px;padding:12px}input{background:#0c1320;border:1px solid #516279;color:white;width:min(95%,550px)}button{background:#40c9a7;color:#08131b;border:0;cursor:pointer;margin:5px}pre{white-space:pre-wrap;overflow-wrap:anywhere}small{color:#a9bdce}</style>
+<main><h1>DIVI</h1><p>Local-first personal command console</p>
+<section class="card" id="login"><h2>Owner login</h2><input id="password" type="password" placeholder="Owner password" autocomplete="current-password"><input id="device" placeholder="Device name" value="Browser"><button onclick="signIn()">Sign in</button></section>
+<section class="card" id="console" hidden><h2>Command console</h2><input id="cmd" placeholder="battery · show notes · backup divi"><button onclick="send()">Run</button><button onclick="logout()">Logout</button><pre id="output"></pre><small id="connection">Connecting…</small></section>
+<section class="card"><h2>Overview</h2><pre id="health">Sign in to view health.</pre></section></main>
+<script>
+let csrf=sessionStorage.getItem('csrf')||'';let ws;
+async function api(path,body){let r=await fetch(path,{method:body?'POST':'GET',headers:{'Content-Type':'application/json','X-CSRF-Token':csrf},credentials:'same-origin',body:body?JSON.stringify(body):undefined});if(!r.ok)throw Error('HTTP '+r.status);return r.json()}
+async function signIn(){try{let a=await api('/api/login',{password:document.querySelector('#password').value,device:document.querySelector('#device').value});csrf=a.csrf;sessionStorage.setItem('csrf',csrf);document.querySelector('#password').value='';await ready()}catch(e){document.querySelector('#health').textContent='Login failed: '+e.message}}
+async function ready(){let s=await api('/api/health');document.querySelector('#login').hidden=true;document.querySelector('#console').hidden=false;document.querySelector('#health').textContent=JSON.stringify(s,null,2);connect()}
+function connect(){ws=new WebSocket((location.protocol==='https:'?'wss':'ws')+'://'+location.host+'/ws');ws.onopen=()=>document.querySelector('#connection').textContent='WebSocket connected';ws.onclose=()=>{document.querySelector('#connection').textContent='Disconnected';setTimeout(()=>{if(csrf)connect()},5000)}}
+async function send(){let o=document.querySelector('#output');try{let x=await api('/api/command',{command:document.querySelector('#cmd').value});o.textContent=JSON.stringify(x,null,2);if(x.result?.confirmation_required&&confirm('Confirm '+x.intent+'?'))o.textContent=JSON.stringify(await api('/api/confirm',{intent:x.intent,params:x.result.params}),null,2)}catch(e){o.textContent=e.message}}
+async function logout(){try{await api('/api/logout',{})}finally{csrf='';sessionStorage.removeItem('csrf');ws?.close();location.reload()}}
+if(csrf)ready().catch(()=>{csrf='';sessionStorage.removeItem('csrf')});
+</script></html>
