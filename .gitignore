@@ -1,0 +1,10 @@
+data/
+secure/
+logs/
+backups/
+.env
+__pycache__/
+*.pyc
+*.sqlite*
+*.key
+*.token
