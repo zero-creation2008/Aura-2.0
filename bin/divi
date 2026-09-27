@@ -1,0 +1,85 @@
+#!/usr/bin/env python3
+import argparse
+import getpass
+import hashlib
+import json
+import os
+import pathlib
+import signal
+import subprocess
+import sys
+
+ROOT=pathlib.Path(__file__).resolve().parents[1]
+sys.path.insert(0,str(ROOT/'src'))
+from core import ROOT, VERSION, db, run, execute, config, backup
+
+def owner_setup():
+    p=ROOT/'secure'/'owner.json'; p.parent.mkdir(exist_ok=True)
+    if p.exists(): return print('Owner already configured')
+    password=getpass.getpass('New DIVI owner password (12+ characters): ')
+    if len(password)<12: raise SystemExit('Password too short')
+    verify=getpass.getpass('Confirm password: ')
+    if verify!=password: raise SystemExit('Passwords differ')
+    salt=os.urandom(16)
+    p.write_text(json.dumps({'salt':salt.hex(),'hash':hashlib.scrypt(password.encode(),salt=salt,n=16384,r=8,p=1).hex()}))
+    p.chmod(0o600); print('Owner configured')
+
+def pidfile(): return ROOT/'data'/'server.pid'
+def active():
+    try:
+        pid=int(pidfile().read_text()); os.kill(pid,0); return pid
+    except (ValueError, FileNotFoundError, ProcessLookupError): return None
+
+def main():
+    args=sys.argv[1:]
+    if not args:
+        print('DIVI '+VERSION+' | divi start | divi status | divi battery | divi "save note ..."'); return
+    cmd=args[0]
+    if cmd=='owner' and args[1:]==['setup']: return owner_setup()
+    if cmd=='start':
+        if active(): return print('Already running:',active())
+        if not (ROOT/'secure'/'owner.json').exists(): return print('Run: divi owner setup')
+        with (ROOT/'logs'/'server.log').open('a') as log:
+            p=subprocess.Popen([sys.executable,str(ROOT/'src'/'server.py')],cwd=ROOT,stdout=log,stderr=log,start_new_session=True)
+        pidfile().write_text(str(p.pid)); return print('Started PID',p.pid,'at http://127.0.0.1:'+str(config()['server']['port']))
+    if cmd=='stop':
+        pid=active()
+        if pid: os.kill(pid,signal.SIGTERM)
+        pidfile().unlink(missing_ok=True); return print('Stopped' if pid else 'Not running')
+    if cmd=='restart':
+        main_stop=active()
+        if main_stop: os.kill(main_stop,signal.SIGTERM)
+        pidfile().unlink(missing_ok=True)
+        sys.argv=[sys.argv[0],'start']; return main()
+    if cmd=='status': return print(json.dumps({'running':bool(active()),'pid':active(),'version':VERSION},indent=2))
+    if cmd=='health':
+        with db() as c: c.execute('SELECT 1').fetchone()
+        return print(json.dumps({'core':'ok','database':'ok','server':'running' if active() else 'stopped','version':VERSION},indent=2))
+    if cmd=='logs':
+        p=ROOT/'logs'/'server.log'; return print(''.join(p.read_text().splitlines(keepends=True)[-40:]) if p.exists() else 'No logs')
+    if cmd=='selftest':
+        p=subprocess.run([sys.executable,'-m','unittest','discover','-s',str(ROOT/'tests'),'-v'],cwd=ROOT)
+        return sys.exit(p.returncode)
+    if cmd=='backup': return print(json.dumps(backup(),indent=2))
+    if cmd=='internet' and args[1:]==['status']: return print(json.dumps(execute('internet.status'),indent=2))
+    if cmd=='fetch' and len(args)==2: return print(json.dumps(execute('internet.fetch',{'url':args[1]}),indent=2))
+    if cmd=='devices' and args[1:]==['list']:
+        with db() as c: print(json.dumps([dict(r) for r in c.execute('SELECT id,name,last_seen,revoked FROM devices')],indent=2))
+        return
+    if cmd=='devices' and len(args)==3 and args[1]=='revoke':
+        with db() as c:
+            c.execute('UPDATE devices SET revoked=1 WHERE id=?',(args[2],)); c.execute('DELETE FROM sessions WHERE device=?',(args[2],))
+        return print('Revoked')
+    if cmd=='alias' and len(args)>=3:
+        intent=args[1]; alias=' '.join(args[2:]).lower()
+        if intent not in ('device.battery','device.storage','internet.status','notes.list','reminder.list','backup.create'): raise SystemExit('Intent not permitted for alias')
+        with db() as c: c.execute('INSERT OR REPLACE INTO aliases VALUES(?,?)',(alias,intent))
+        return print('Alias saved')
+    if cmd=='update': return print('Automatic updater is not implemented in this release. Do not enable automaticApply.')
+    if cmd=='remote': return print('Tunnel is not configured. See README remote access section.')
+    if cmd=='history':
+        with db() as c: print(json.dumps([dict(r) for r in c.execute('SELECT * FROM audit ORDER BY id DESC LIMIT 30')],indent=2))
+        return
+    print(json.dumps(run(' '.join(args)),indent=2))
+
+if __name__=='__main__': main()
