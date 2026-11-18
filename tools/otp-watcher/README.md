@@ -46,6 +46,20 @@ GitHub is a code host, **not a 24/7 always-on process host**. For urgent expirin
 - `TELEGRAM_BOT_TOKEN`: token of a bot you own.
 - `TELEGRAM_CHAT_ID`: your personal chat ID with that bot; send `/start` to the bot first.
 
+### Telegram BotFather quick setup (Linux / Termux with GitHub CLI)
+
+1. Open [@BotFather](https://t.me/BotFather) in Telegram. Send `/newbot`, pick a display name and a unique username ending with `bot`. Keep its token private.
+2. Open the newly created bot and send `/start` from the Telegram account that should receive alerts.
+3. Install GitHub CLI (`gh`), authenticate with `gh auth login`, and run the private guided helper from the repository root:
+
+   ```bash
+   python3 tools/otp-watcher/setup_telegram.py
+   ```
+
+   This verifies the bot, asks you to choose your own private chat, and uses `gh secret set` to store `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` without adding credentials to command history or GitHub commits. **Do not paste the BotFather token into ChatGPT.**
+4. Complete `GMAIL_TOKEN_JSON` privately using Google OAuth as described above. The helper does not touch Gmail.
+5. Review PR #1, merge into the default branch, then run the GitHub Actions test before relying on alerts.
+
 To test Telegram delivery before connecting Gmail, run locally with `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` set in your environment:
 
 ```bash
@@ -74,4 +88,4 @@ python3 -m compileall -q watcher.py
 python3 -m unittest discover -s tests -v
 ```
 
-> Connector availability: A dedicated “Telepath” connector was not available in this session. This code sends bot messages using the official Telegram Bot API instead.
+The Telepath ChatGPT connector is separate from the BotFather token used here. For scheduled GitHub Actions notifications, this watcher sends through Telegram's official Bot API.
