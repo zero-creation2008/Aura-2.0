@@ -1,0 +1,51 @@
+name: Personal Gmail verification alerts
+on:
+  workflow_dispatch:
+    inputs:
+      test_telegram:
+        description: 'Send a harmless Telegram test alert (no Gmail access)'
+        type: boolean
+        required: false
+        default: false
+  schedule:
+    # Best-effort every five minutes; GitHub may delay or skip scheduled jobs.
+    - cron: '2-59/5 * * * *'
+permissions:
+  contents: read
+concurrency:
+  group: otp-watch
+  cancel-in-progress: false
+jobs:
+  otp-watch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    env:
+      GMAIL_TOKEN_JSON: ${{ secrets.GMAIL_TOKEN_JSON }}
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Send test alert (no Gmail access)
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.test_telegram && env.TELEGRAM_BOT_TOKEN != '' && env.TELEGRAM_CHAT_ID != '' }}
+        run: python tools/otp-watcher/watcher.py --mode github --telegram-test
+      - name: Restore de-duplication state
+        if: ${{ !inputs.test_telegram }}
+        uses: actions/cache/restore@v4
+        with:
+          path: tools/otp-watcher/.state/
+          key: otp-state-${{ github.run_id }}
+          restore-keys: otp-state-
+      - name: Check new verification emails (never sends OTP codes)
+        if: ${{ !inputs.test_telegram && env.GMAIL_TOKEN_JSON != '' && env.TELEGRAM_BOT_TOKEN != '' && env.TELEGRAM_CHAT_ID != '' }}
+        run: |
+          pip install -q -r tools/otp-watcher/requirements.txt
+          python tools/otp-watcher/watcher.py --mode github --once --state tools/otp-watcher/.state/seen.sqlite3
+      - name: Save de-duplication state
+        if: ${{ !inputs.test_telegram && env.GMAIL_TOKEN_JSON != '' && env.TELEGRAM_BOT_TOKEN != '' && env.TELEGRAM_CHAT_ID != '' }}
+        uses: actions/cache/save@v4
+        with:
+          path: tools/otp-watcher/.state/
+          key: otp-state-${{ github.run_id }}
